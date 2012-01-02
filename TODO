@@ -1,0 +1,17 @@
+Todo List for future versions
+
+* Record hopcount; have sender put his startingttl (sttl) in
+  the payload. And have receiver compute the hopcount from the
+  received TTL in the IP header.
+* Keep window of last N sequence numbers seen for a source, and
+  report missed packets, out-of-order packets etc.
+* Support a daemon mode, which goes into the background and reports
+  results via syslog.
+* Support IPv6 Multicast.
+* Define a structured payload with XML, and a way to customize the
+  payload.
+* Send warnings on threshold of silence from specified sources
+* Cryptographically authenticate/encrypt packets, so that only 
+  authorized listeners can decode it.
+
+--Shumon Huque

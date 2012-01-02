@@ -1,0 +1,39 @@
+.ds VN 0.1
+.TH mctester 1 mctester
+.SH NAME
+mctester \- a multicast testing tool
+.SH SYNOPSIS
+.B mctester
+.I groupaddress
+.I groupport
+.I interval
+.SH DESCRIPTION
+.I mctester
+is a small python program to help test IP multicast connectivity between 
+nodes. It both sends and receives multicast on a specified group address 
+and port and prints out what it receives with periodic statistics.
+.PP
+If running between machines on different subnets, IP multicast routing
+needs to be working in the network. It may also be necessary to tweak
+the TTL parameter in the program source code, depending on such factors 
+as the size of your network, the location of the rendezvous point relative 
+to the nodes, and any TTL threshold limits configured on routers. In general, 
+if multicast traffic isn't reaching some nodes, the problem might be fixed
+by raising the TTL.
+.PP
+Written in Python and tested on Solaris 8-10, Linux 2 and Mac OS X 
+10.3-10.4. May work on other platforms that support IP Multicast and 
+POSIX threads.
+.PP
+.SH OPTIONS
+No options are currently supported.
+.SH OUTPUT AND EXIT CODES
+If successfully started,
+.I mctester
+runs in the foreground forever until interrupted by keyboard interrupt
+or other termination signal. Unsuccessful invocations result in exit
+code 1 and user initiated terminations in exit code 0.
+.SH AUTHORS
+Shumon Huque <shuque@isc.upenn.edu>
+.SH VERSION
+revision \*(VN

@@ -1,0 +1,185 @@
+#!/usr/local/bin/python
+#
+# Usage: mctester <groupaddress> <port> <interval>
+# This is a small tool that I wrote while trying to debug IP multicast
+# problems. It both sends and receives multicast on a given group and
+# port and prints out what it receives with periodic statistics.
+#
+# Author: Shumon Huque <shuque@isc.upenn.edu>
+#
+
+import os, sys, socket, time, struct, thread
+
+PROGNAME      = os.path.basename(sys.argv[0])
+PROGDESC      = "Multicast Tester"
+VERSION       = "0.4"
+TIMEOUT       = 120                              # in seconds
+TTL           = 10                               # enough for campus network
+LOOP          = 0                                # loop outgoing packets?
+LOCAL_IF      = "0.0.0.0"                        # use default local interface
+BUFSIZE       = 1024                             # max size of packet read
+STATSINTERVAL = 60                               # in seconds
+
+# A simple hashtable to store per-sender statistics. The key is
+# the source IP address, and the value is a list of pktcount,
+# last-seen, first-seen.
+stats = {}
+
+# A list of CIDR prefixes of sources that we are interested in
+# tracking (it isn't really an access control list). It might be
+# better to use Source-Specific-Multicast (SSM) instead, but the
+# current Python socket API doesn't expose the operations required
+# to do it.
+USE_ACL       = False
+SENDER_ACL    = [ "10.0.2.0/24", "192.168.7.32/27" ]
+
+def usage():
+    print >>sys.stderr, """\
+%s (%s), version %s
+Usage: %s <groupaddress> <port> <interval>""" % (PROGNAME, PROGDESC,
+                                                 VERSION, PROGNAME)
+    sys.exit(1)
+    
+
+def mask2int(n):
+    """return a netmask of length n bits as an integer"""
+    return ~((1L << (32-n)) - 1) & (-1)
+
+
+def matchprefix(cidr_prefix, ipaddress):
+    """returns True or False, depending on whether the ipaddress matches
+    the CIDR prefix, given in network/masklen format"""
+
+    ipnetwork, masklen = cidr_prefix.split("/")
+    masklen = int(masklen)
+    int_netmask   = mask2int(masklen)
+    int_network   = ip2integer(ipnetwork) & int_netmask
+
+    int_ipaddress = ip2integer(ipaddress)
+
+    if (int_ipaddress & int_netmask) == int_network:
+        return True
+    else:
+        return False
+
+
+def matches_acl(addr, acl):
+    """Does given address match given list of CIDR prefixes (acl)?"""
+    for entry in acl:
+        if matchprefix(entry, addr):
+            return True
+    return False
+
+
+def humantime():
+    """timestamp for ocular consumption by english speaking homo sapien"""
+    return time.strftime("%Y-%m-%d-%H:%M:%S-%Z", time.localtime(time.time()))
+
+
+def statstime(t):
+    """timestamp used in printing out statistics"""
+    return time.strftime("%Y%m%d-%H:%M", time.localtime(t))
+    
+
+def get_shorthostname():
+    return socket.gethostname().split('.')[0]
+
+
+def multicast_recvsock(group_address, group_port, local_if):
+    """create socket for receiving multicast"""
+    ip_mreq = socket.inet_aton(group_address) + socket.inet_aton(local_if)
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind((local_if, group_port))
+    s.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, ip_mreq)
+    return s
+
+
+def multicast_sendsock(ttl, loop=0):
+    """create socket for sending multicast"""
+    packed_ttl  = struct.pack(">B", ttl)
+    packed_loop = struct.pack(">B", loop)
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_TTL, packed_ttl)
+    s.setsockopt(socket.IPPROTO_IP, socket.IP_MULTICAST_LOOP, packed_loop)
+    return s
+
+
+def make_payload(host, seqno):
+    """Create a somewhat interesting payload."""
+    return "%s %s load=%.2f seqno=%d" % \
+           (host, humantime(), os.getloadavg()[0], seqno)
+
+
+def multicast_send(s, group_address, group_port):
+    """main loop for sending multicast data"""
+    seqno = 0
+    shorthost = get_shorthostname()
+    while True:
+        seqno += 1
+        s.sendto(make_payload(shorthost, seqno), (group_address, group_port))
+        time.sleep(interval)
+
+
+def multicast_recv(s):
+    """main loop for receiving multicast data"""
+    while True:
+        data, address = s.recvfrom(BUFSIZE)
+        t = time.time()
+        if USE_ACL and (not matches_acl(address[0], SENDER_ACL)):
+            stdoutmutex.acquire()
+            print "WARNING: received data from unwanted sender %s" \
+                  % address[0]
+            stdoutmutex.release()
+            continue
+        if stats.has_key(address[0]):
+            pktcount, lastseen, firstseen = stats[address[0]]
+            stats[address[0]][0] += 1
+            stats[address[0]][1] = t
+        else:
+            stats[address[0]] = [1, t, t]
+        stdoutmutex.acquire()
+        print "[%s, %d] %s" % (address[0], address[1], data)
+        stdoutmutex.release()
+
+
+def printstats(title):
+    stdoutmutex.acquire()
+    print title
+    print "\t%-15s %7s  %14s %14s" % ("Source", "Pkts", "Last", "First")
+    for ip in stats:
+        pktcount, lastseen, firstseen = stats[ip]
+        print "\t%-15s %7d  %14s %14s" % \
+              (ip, pktcount, statstime(lastseen), statstime(firstseen))
+    stdoutmutex.release()
+    return
+
+
+if __name__ == '__main__':
+    
+    try:
+        group_address, group_port, interval = sys.argv[1:]
+        group_port = int(group_port)
+        interval = int(interval)
+    except ValueError:
+        usage()
+
+    s_recv = multicast_recvsock(group_address, group_port, LOCAL_IF)
+    s_send = multicast_sendsock(TTL, LOOP)
+
+    stdoutmutex = thread.allocate_lock()
+
+    thread.start_new(multicast_send, (s_send, group_address, group_port))
+    thread.start_new(multicast_recv, (s_recv,))
+
+    # Main thread: periodically print statistics. And print final stats
+    # upon keyboard interrupt or termination by signal.
+    
+    try:
+        while True:
+            time.sleep(STATSINTERVAL)
+            printstats(">>> Statistics:")
+    except (SystemExit, KeyboardInterrupt):
+        print "Program terminated."
+        printstats(">>> Final Statistics:")
+        os._exit(0)

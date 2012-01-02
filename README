@@ -1,0 +1,37 @@
+2006-12-01
+Program:	mctester (Multicast Tester)
+Version:	0.4
+Written by:	Shumon Huque <shuque@isc.upenn.edu>
+
+Description:
+
+	A small python program I wrote to help me debug IP multicast
+	problems in the network. It both sends and receives multicast 
+	on a specified group address and port and prints out what it 
+	receives with periodic statistics.
+
+	If running between machines on different subnets, IP multicast 
+	routing	needs to be working in the network. It may also be necessary 
+	to tweak the TTL parameter in the program source code, depending 
+	on such factors as the size of your network, the location of the 
+	rendezvous point relative to the nodes, and any TTL threshold
+	limits configured on routers. In general, if multicast traffic 
+	isn't reaching some nodes, the problem might be fixed by raising 
+	the TTL.
+
+Pre-requisites:
+
+	Python 2.x
+	A platform that supports IP multicast and POSIX threads.
+
+Platforms:
+
+	Tested on the following platforms:
+		Solaris 8, 9, and 10
+		Linux 2.x
+		Mac OS X
+	May work on other platforms that have multicast and pthreads
+
+Installation:
+
+1. (as root) make install
