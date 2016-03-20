@@ -1,7 +1,7 @@
 2006-12-01
 Program:	mctester (Multicast Tester)
 Version:	0.4
-Written by:	Shumon Huque <shuque@isc.upenn.edu>
+Written by:	Shumon Huque <shuque@gmail.com>
 
 Description:
 
@@ -21,7 +21,7 @@ Description:
 
 Pre-requisites:
 
-	Python 2.x
+	Python 2.7.x or Python 3.x
 	A platform that supports IP multicast and POSIX threads.
 
 Platforms:

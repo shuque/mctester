@@ -1,4 +1,4 @@
-#!/usr/local/bin/python
+#!/usr/bin/env python
 #
 # Usage: mctester <groupaddress> <port> <interval>
 # This is a small tool that I wrote while trying to debug IP multicast
@@ -8,7 +8,7 @@
 # Author: Shumon Huque <shuque@isc.upenn.edu>
 #
 
-import os, sys, socket, time, struct, thread
+import os, sys, socket, time, struct, threading
 
 PROGNAME      = os.path.basename(sys.argv[0])
 PROGDESC      = "Multicast Tester"
@@ -34,16 +34,16 @@ USE_ACL       = False
 SENDER_ACL    = [ "10.0.2.0/24", "192.168.7.32/27" ]
 
 def usage():
-    print >>sys.stderr, """\
-%s (%s), version %s
-Usage: %s <groupaddress> <port> <interval>""" % (PROGNAME, PROGDESC,
-                                                 VERSION, PROGNAME)
+    sys.stderr.write("""\
+{0} ({1}), version {2}
+Usage: {0} <groupaddress> <port> <interval>\n""".format(
+    PROGNAME, PROGDESC, VERSION))
     sys.exit(1)
     
 
 def mask2int(n):
     """return a netmask of length n bits as an integer"""
-    return ~((1L << (32-n)) - 1) & (-1)
+    return ~((1 << (32-n)) - 1) & (-1)
 
 
 def matchprefix(cidr_prefix, ipaddress):
@@ -107,8 +107,9 @@ def multicast_sendsock(ttl, loop=0):
 
 def make_payload(host, seqno):
     """Create a somewhat interesting payload."""
-    return "%s %s load=%.2f seqno=%d" % \
-           (host, humantime(), os.getloadavg()[0], seqno)
+    payload = "%s %s load=%.2f seqno=%d" % \
+              (host, humantime(), os.getloadavg()[0], seqno)
+    return payload.encode('ascii')
 
 
 def multicast_send(s, group_address, group_port):
@@ -128,8 +129,8 @@ def multicast_recv(s):
         t = time.time()
         if USE_ACL and (not matches_acl(address[0], SENDER_ACL)):
             stdoutmutex.acquire()
-            print "WARNING: received data from unwanted sender %s" \
-                  % address[0]
+            print("WARNING: received data from unwanted sender %s"
+                  % address[0])
             stdoutmutex.release()
             continue
         if stats.has_key(address[0]):
@@ -139,18 +140,18 @@ def multicast_recv(s):
         else:
             stats[address[0]] = [1, t, t]
         stdoutmutex.acquire()
-        print "[%s, %d] %s" % (address[0], address[1], data)
+        print("[%s, %d] %s" % (address[0], address[1], data))
         stdoutmutex.release()
 
 
 def printstats(title):
     stdoutmutex.acquire()
-    print title
-    print "\t%-15s %7s  %14s %14s" % ("Source", "Pkts", "Last", "First")
+    print(title)
+    print("\t%-15s %7s  %14s %14s" % ("Source", "Pkts", "Last", "First"))
     for ip in stats:
         pktcount, lastseen, firstseen = stats[ip]
-        print "\t%-15s %7d  %14s %14s" % \
-              (ip, pktcount, statstime(lastseen), statstime(firstseen))
+        print("\t%-15s %7d  %14s %14s" %
+              (ip, pktcount, statstime(lastseen), statstime(firstseen)))
     stdoutmutex.release()
     return
 
@@ -167,10 +168,12 @@ if __name__ == '__main__':
     s_recv = multicast_recvsock(group_address, group_port, LOCAL_IF)
     s_send = multicast_sendsock(TTL, LOOP)
 
-    stdoutmutex = thread.allocate_lock()
+    stdoutmutex = threading.Lock()
 
-    thread.start_new(multicast_send, (s_send, group_address, group_port))
-    thread.start_new(multicast_recv, (s_recv,))
+    threading.Thread(target=multicast_send, 
+                     args=(s_send, group_address, group_port)).start()
+    threading.Thread(target=multicast_recv, 
+                     args=(s_recv,)).start()
 
     # Main thread: periodically print statistics. And print final stats
     # upon keyboard interrupt or termination by signal.
@@ -180,6 +183,6 @@ if __name__ == '__main__':
             time.sleep(STATSINTERVAL)
             printstats(">>> Statistics:")
     except (SystemExit, KeyboardInterrupt):
-        print "Program terminated."
+        print("Program terminated.")
         printstats(">>> Final Statistics:")
         os._exit(0)
